@@ -5,34 +5,35 @@
 #include <GL/glut.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define MAX_POLYGON_VERTICES 30
 #define RADIUS 4
 
-short int rect_visible = 1;
 int rect_corner_from_y = 0;
 int rect_corner_from_x = 0;
 int rect_corner_to_y = 0;
 int rect_corner_to_x = 0;
 
+// State indicator
 enum STATE
 {
-	clipping,         /* state in which we draw the clipping rectangle */
-	clipped,          /* state in which we have clipped the polygon */
-	drawing_polygon,     /* state in which we draw a polygon */
-	initial
+	drawing_polygon,
+	clipping,
+	clipped
 } display_state;
 
 
-/* A point (x,y) */
+// Point structure
 typedef struct
 {
 	int x;
 	int y;
 } pointT;
 
+// Polygon structure
 typedef struct
 {
 	pointT p[MAX_POLYGON_VERTICES];
@@ -45,9 +46,12 @@ polygonT clipped_pol_right;
 polygonT clipped_pol_bottom;
 polygonT clipped_pol_top;
 
-
-/* Function prototypes */
-void clear_screen(void);
+void clear_screen()
+{
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glutSwapBuffers();
+}
 
 void draw_point(int x, int y)
 {
@@ -59,10 +63,9 @@ void draw_point(int x, int y)
 
 void init()
 {
-	/* Transparency enabled */
-	glEnable(GL_BLEND);
+	glEnable(GL_BLEND);		// blend on
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	display_state = drawing_polygon;
+	display_state = drawing_polygon;	//initial state: drawing
 	glPointSize(4);
 	glClearColor(0, 0, 0, 0);
 	glColor3f(1, 0, 0);
@@ -72,22 +75,11 @@ void init()
 	gluOrtho2D(0, WINDOW_WIDTH, 0, WINDOW_HEIGHT);
 }
 
-void draw_line(int x0, int y0, int x1, int y1)
-{
-	glBegin(GL_LINES);
-	glVertex2i(x0, y0);
-	glVertex2i(x1, y1);
-	glEnd();
-	glutSwapBuffers();
-}
-
 void draw_polygon(polygonT pol)
 {
-	int i;
-
 	glBegin(GL_POLYGON);
 	glColor3f(1, 0, 0);
-	for (i = 0; i < pol.vertices; i++)
+	for (int i = 0; i < pol.vertices; i++)
 	{
 		glVertex2i(pol.p[i].x, pol.p[i].y);
 	}
@@ -102,11 +94,8 @@ void display()
 	{
 		glColor3f(1, 0, 0);
 		draw_polygon(pol);
-		if (rect_visible)
-		{
-			glColor4f(0, 1, 0, 0.5);
-			glRecti(rect_corner_from_x, rect_corner_from_y, rect_corner_to_x, rect_corner_to_y);
-		}
+		glColor4f(0, 1, 0, 0.5);
+		glRecti(rect_corner_from_x, rect_corner_from_y, rect_corner_to_x, rect_corner_to_y);
 		glColor3f(1, 0, 0);
 		glutSwapBuffers();
 	}
@@ -134,7 +123,9 @@ void mouseFunc(int btn, int state, int mouse_x, int mouse_y)
 
 	if (btn == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
 	{
-		/* We use WINDOW_HEIGHT  - y because mouse position starts counting from above. y = 0 means upper pixel of the window */
+		// we use WINDOW_HEIGHT  - y
+		// because mouse position starts counting from above. 
+		// y = 0 means upper pixel of the window
 
 		if (display_state == drawing_polygon)
 		{
@@ -142,8 +133,8 @@ void mouseFunc(int btn, int state, int mouse_x, int mouse_y)
 			pol.p[vertices].x = x;
 			pol.p[vertices].y = y;
 			pol.vertices = ++vertices;
-			/*If the point we draw is in a radius of RADIUS pixels around the 1st point*/
 
+			// if the point is in a radius of RADIUS pixels around the 1st point
 			if (pow(pol.p[0].x - x, 2) + pow(pol.p[0].y - y, 2) < pow(RADIUS, 2) && vertices > 2)
 			{
 				pol.vertices = vertices - 1;
@@ -160,18 +151,20 @@ void mouseFunc(int btn, int state, int mouse_x, int mouse_y)
 	}
 	else if (btn == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
 	{
+		pol.vertices = 0;
+		clipped_pol_left.vertices = 0;
+		clipped_pol_right.vertices = 0;
+		clipped_pol_bottom.vertices = 0;
+		clipped_pol_top.vertices = 0;
+		memset(pol.p, 0, sizeof(pol.p));
+		memset(clipped_pol_left.p, 0, sizeof(clipped_pol_left.p));
+		memset(clipped_pol_right.p, 0, sizeof(clipped_pol_right.p));
+		memset(clipped_pol_bottom.p, 0, sizeof(clipped_pol_bottom.p));
 		clear_screen();
 		display_state = drawing_polygon;
 		vertices = 0;
 		printf("Screen Cleared\n");
 	}
-}
-
-void clear_screen()
-{
-	glClearColor(0, 0, 0, 0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glutSwapBuffers();
 }
 
 void specialFunc(int key, int x, int y)
@@ -237,16 +230,12 @@ void getcrossingpoints(polygonT pol, int xmin, int xmax, int ymin,int ymax,
 	}
 }
 
-/* Input : the polygon vertices and the coordinates of the clipping rectangle */
-/* Output : the clipped polygon vertices */
-/* XXX : Need to fix the "top" case */
 void sutherland_hodgeman_clipping(polygonT pol, int xmin, int ymin, int xmax, int ymax)
 {
 	int i;
 	int y_int[MAX_POLYGON_VERTICES][2];
 	int x_int[MAX_POLYGON_VERTICES][2];
-	int cv; /* Clipped vertices index */
-			/* Find interstections of x = xmin, x = xmax, y = ymin, y = ymax */
+	int cv; 
 
 	// Left
 	cv = 0;
@@ -436,29 +425,11 @@ void keyboardFunc(unsigned char key, int x, int y)
 	int xmax;
 	int ymax;
 
-	/* Clipping rectangle can be toggled visible
-	* only if we are not in clipping state */
 	if (display_state == clipping)
 	{
 		if (key == ' ')
 		{
-			if (rect_visible)
-			{
-				printf("Rect not visible\n");
-				rect_visible = 0;
-				glutPostRedisplay();
-			}
-			else
-			{
-				printf("Rect visible\n");
-				rect_visible = 1;
-				glutPostRedisplay();
-			}
-
-		}
-		else if (key == 'c' || key == 'C')
-		{
-			printf("Clipping polygon...\n");
+			printf("### Clipping polygon ###\n");
 			xmin = (rect_corner_from_x < rect_corner_to_x) ? rect_corner_from_x : rect_corner_to_x;
 			xmax = (rect_corner_from_x > rect_corner_to_x) ? rect_corner_from_x : rect_corner_to_x;
 			ymin = (rect_corner_from_y < rect_corner_to_y) ? rect_corner_from_y : rect_corner_to_y;
@@ -492,12 +463,11 @@ void motionFunc(int x, int y)
 
 int main(int argc, char *argv[])
 {
-	/* Window and buffers stuff */
 	glutInit(&argc, argv);
 	glutInitWindowPosition(0, 0);
 	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-	glutInitDisplayMode(GLUT_SINGLE | GLUT_RGBA | GLUT_DEPTH);
-	glutCreateWindow("Clipping window demonstration");
+	glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB | GLUT_DEPTH);
+	glutCreateWindow("Polygon Clipping");
 	glutDisplayFunc(display);
 	init();
 	glutMotionFunc(motionFunc);
